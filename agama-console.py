@@ -399,12 +399,48 @@ def sw_registration(client):
     client.get("software/registration")
 
 
+def sw_add_repository(client):
+    """PUT /api/software/config {"extraRepositories": [RepositoryParams]}
+    adds/overrides custom repos (alias/url required, name/productDir/enabled
+    optional). This replaces the whole extraRepositories list, so existing
+    custom repos are re-read first and the new one appended."""
+    ok, current = client.get("software/config", show=False)
+    existing = (current.get("extraRepositories") or []) if ok else []
+
+    alias = input("Repo alias (unique id): ").strip()
+    url = input("Repo URL: ").strip()
+    if not alias or not url:
+        error("alias and url are required.")
+        return
+    name = input("Repo display name (blank = alias): ").strip()
+    enabled = input("Enabled? [Y/n]: ").strip().lower() != "n"
+
+    repo = {"alias": alias, "url": url, "enabled": enabled}
+    if name:
+        repo["name"] = name
+
+    body = {"extraRepositories": existing + [repo]}
+    ok, _, _ = client.call("PUT", "software/config", body)
+    if ok:
+        success(f"Repository '{alias}' added ({len(existing) + 1} custom repo(s) total).")
+
+
+def sw_remove_repositories(client):
+    if input(f"{YELLOW}Clear ALL custom (extraRepositories) repos? [y/N]{ENDC} ").strip().lower() != "y":
+        return
+    ok, _, _ = client.call("PUT", "software/config", {"extraRepositories": []})
+    if ok:
+        success("Custom repositories cleared.")
+
+
 SOFTWARE_MENU = [
     ("List products", sw_list_products),
     ("Select product", sw_select_product),
     ("Show software config", sw_show_config),
     ("Show patterns", sw_patterns),
-    ("Show repositories", sw_repositories),
+    ("Show all active repositories", sw_repositories),
+    ("Add a custom repository", sw_add_repository),
+    ("Clear custom repositories", sw_remove_repositories),
     ("Show licenses", sw_licenses),
     ("Show proposal", sw_proposal),
     ("Probe software", sw_probe),
