@@ -204,10 +204,18 @@ reprobe/reactivate, raw device/action listings), **Network**, **Localization**
 check), **Questions** (list/answer pending questions — e.g. the LUKS
 passphrase prompt raised whenever probing an already-encrypted disk; each
 re-probe raises a *new* question id, answering one doesn't pre-empt the next
-— and setting the auto/user answer policy), and **Hostname**. Two top-level
-extras round it out: a live event stream over the `/ws` websocket (needs
-`pip install websockets`; degrades to a clear error if missing), and a raw
-GET/POST/PUT/PATCH/DELETE call for anything not wired into a dedicated
+— and setting the auto/user answer policy), **Hostname**, and **Scripts**
+(add/run/clear user-defined scripts — genuine command execution against
+whatever the API reaches: `pre`/`postPartitioning` scripts run in the live
+installer environment, `post` scripts run chroot'd into the installed target
+by default, `init` scripts are written now but only run on the target's
+first boot; verified live this session, stdout/stderr/exit status land in
+`/run/agama/scripts/<group>/<name>.{log,err,out}`). Three top-level extras
+round it out: a live event stream over the `/ws` websocket (needs
+`pip install websockets`, or on openSUSE/SLE `zypper install
+python313-websockets`; degrades to a clear error if missing), log download
+(`GET manager/logs/store`, streamed straight to a `.tar.gz` on disk), and a
+raw GET/POST/PUT/PATCH/DELETE call for anything not wired into a dedicated
 action.
 
 The Network/Localization/Users endpoints beyond what `agama-demo.py` already

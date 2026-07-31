@@ -43,8 +43,15 @@ Categories: **Manager** (status, probe/probe_sync/reprobe_sync, trigger install,
 reprobe/reactivate, device/action listings), **Network**, **Localization** (l10n), **Users** (root,
 first user, password check), **Questions** (list/answer — LUKS passphrase prompts get a *new*
 question id on every re-probe, answering one doesn't stick for the next — plus setting the
-auto/user answer policy), and **Hostname**. Two top-level extras: a live event stream over the
-`/ws` websocket (needs `pip install websockets`; degrades to a clear error if missing), and a raw
+auto/user answer policy), **Hostname**, and **Scripts** (`POST scripts` adds a `Script{type, name,
+content, chroot?}`, `POST scripts/run` with a bare JSON string group name executes every script in
+that group — real command execution: `pre`/`postPartitioning` run in the live installer env,
+`post` runs chroot'd into `/mnt` by default, `init` is written now but only runs on the target's
+first boot; output lands in `/run/agama/scripts/<group>/<name>.{log,err,out}`; `DELETE scripts`
+`remove_dir_all`s the whole group tree including those logs — verified live, including that
+ordering gotcha). Three top-level extras: a live event stream over the `/ws` websocket (needs
+`pip install websockets`, or `zypper install python313-websockets`; degrades to a clear error if
+missing), log download (`GET manager/logs/store` streamed to a `.tar.gz`), and a raw
 GET/POST/PUT/PATCH/DELETE call for anything not covered by a dedicated action.
 
 Network/Localization/Users actions beyond what `agama-demo.py` already exercises are wired in from
