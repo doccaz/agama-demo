@@ -746,7 +746,7 @@ async def _watch_events_async(client):
     ssl_ctx.verify_mode = ssl.CERT_NONE
     headers = {"Authorization": f"Bearer {client.token}"}
     log(f"Connecting to {uri} (Ctrl-C to stop)...")
-    async with websockets.connect(uri, ssl=ssl_ctx, extra_headers=headers) as ws:
+    async with websockets.connect(uri, ssl=ssl_ctx, additional_headers=headers) as ws:
         async for message in ws:
             try:
                 pretty(json.loads(message))
