@@ -223,6 +223,12 @@ when explicitly invoked over the API. Chroot isolation for `post` was
 verified end-to-end: a marker file written by the script landed at
 `/mnt/root/<file>` from the live installer's view and was absent from the
 live environment's own `/root` — genuine `chroot /mnt`, not the live env).
+There's no dedicated "run one command" endpoint in the Agama API — `scripts`
+(add + run) is the only command-execution primitive, and there's no way to
+read stdout back over HTTP, only via the filesystem — so a **"Run one ad-hoc
+command now"** action collapses add+run into a single step for a one-off
+command, verified live (`hostname; id; uname -a` executed and produced
+exactly the expected output).
 Three top-level extras
 round it out: a live event stream over the `/ws` websocket (needs
 `pip install websockets`, or on openSUSE/SLE `zypper install

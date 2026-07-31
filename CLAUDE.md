@@ -60,7 +60,9 @@ the Rust codebase, so they only run when the API client (this console, or the we
 calls `POST scripts/run`. The chroot isolation was verified end-to-end against a completed
 `atm-slim` install: a `post` script's marker file landed at `/mnt/root/<file>` from the live
 installer's view and was absent from the live environment's own `/root` — genuine `chroot /mnt`,
-not just execution in the live env). Three top-level extras: a live event stream over the `/ws` websocket (needs
+not just execution in the live env. No endpoint reads stdout back over HTTP — only the filesystem
+does — and there's no dedicated "run one command" endpoint either, so "Run one ad-hoc command now"
+collapses add+run into one step for a single command; verified live). Three top-level extras: a live event stream over the `/ws` websocket (needs
 `pip install websockets`, or `zypper install python313-websockets`; degrades to a clear error if
 missing), log download (`GET manager/logs/store` streamed to a `.tar.gz`), and a raw
 GET/POST/PUT/PATCH/DELETE call for anything not covered by a dedicated action.
