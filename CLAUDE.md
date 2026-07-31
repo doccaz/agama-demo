@@ -62,10 +62,26 @@ calls `POST scripts/run`. The chroot isolation was verified end-to-end against a
 installer's view and was absent from the live environment's own `/root` — genuine `chroot /mnt`,
 not just execution in the live env. No endpoint reads stdout back over HTTP — only the filesystem
 does — and there's no dedicated "run one command" endpoint either, so "Run one ad-hoc command now"
-collapses add+run into one step for a single command; verified live). Three top-level extras: a live event stream over the `/ws` websocket (needs
-`pip install websockets`, or `zypper install python313-websockets`; degrades to a clear error if
-missing), log download (`GET manager/logs/store` streamed to a `.tar.gz`), and a raw
+collapses add+run into one step for a single command; verified live), and **Files** (`PUT
+/api/files/` queues `UserFile{content|url, destination, permissions, user, group}`, `POST
+/api/files/write` writes them — chroot'd into `/mnt/<destination>` on the target, same as `post`
+scripts but via a different code path (`install -d` + write + `chown`, agama-lib/src/files/
+model.rs); a `url` source makes Agama fetch-and-write, i.e. download-to-target. Same timing
+constraint as `post` scripts, confirmed live: Agama unmounts `/mnt` on its own shortly after
+`Finish` — even with no probe call and no explicit reboot — so chroot'd actions have a narrow
+window right after install completes).
+
+Four top-level extras: a live event stream over the `/ws` websocket, raw (needs `pip install
+websockets`, or `zypper install python313-websockets`; degrades to a clear error if missing); a
+**filtered package-install progress view** — `GET manager/installer` has no per-package field,
+only `ProgressChanged` events on `/ws` do (`"Installing curl"`, step N/max, one event per D-Bus
+service path) — rendered as a single updating progress bar instead of the raw dump, verified live
+mid-install; log download (`GET manager/logs/store` streamed to a `.tar.gz`); and a raw
 GET/POST/PUT/PATCH/DELETE call for anything not covered by a dedicated action.
+
+Reboot-to-verify was confirmed end-to-end: `POST manager/finish "reboot"` cleanly reboots out of
+the live installer into the just-installed target — no reinstall needed — and the target comes up
+correctly (`hostnamectl`, `uptime 0:00`, SSH as root all checked out on a real `atm-slim` run).
 
 Network/Localization/Users actions beyond what `agama-demo.py` already exercises are wired in from
 source but not all hand-tested against a live installer — if one 404s/400s, use the raw-call action

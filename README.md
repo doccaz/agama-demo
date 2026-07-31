@@ -228,13 +228,28 @@ There's no dedicated "run one command" endpoint in the Agama API — `scripts`
 read stdout back over HTTP, only via the filesystem — so a **"Run one ad-hoc
 command now"** action collapses add+run into a single step for a one-off
 command, verified live (`hostname; id; uname -a` executed and produced
-exactly the expected output).
-Three top-level extras
-round it out: a live event stream over the `/ws` websocket (needs
-`pip install websockets`, or on openSUSE/SLE `zypper install
-python313-websockets`; degrades to a clear error if missing), log download
-(`GET manager/logs/store`, streamed straight to a `.tar.gz` on disk), and a
-raw GET/POST/PUT/PATCH/DELETE call for anything not wired into a dedicated
+exactly the expected output). **Files** (`PUT /api/files/` queues
+`UserFile{content|url, destination, permissions, user, group}` entries,
+`POST /api/files/write` actually writes them — always chroot'd into
+`/mnt/<destination>` on the target, same mechanism as `post` scripts but a
+different code path — `install -d` + write + `chown`, not a run script. A
+`url` source makes Agama itself fetch and write it, so this doubles as a
+download-to-target primitive. Same caveat as `post` scripts: `/mnt` is only
+mounted for a narrow window — Agama unmounts it on its own shortly after
+reaching `Finish`, even without an explicit reboot or any probe call, so
+chroot'd actions need to run promptly after the install completes).
+
+Four top-level extras round it out: a live event stream over the `/ws`
+websocket, raw (needs `pip install websockets`, or on openSUSE/SLE `zypper
+install python313-websockets`; degrades to a clear error if missing); a
+**filtered package-install progress view** — `GET manager/installer` only
+exposes coarse phase/isBusy/canInstall, so package-level detail (`"Installing
+curl"`, step 698/742) is only available via `ProgressChanged` events on
+`/ws`, which this renders as a single updating progress bar per D-Bus
+service instead of the raw event dump — verified live during an actual
+`atm-slim` package installation; log download (`GET manager/logs/store`,
+streamed straight to a `.tar.gz` on disk); and a raw
+GET/POST/PUT/PATCH/DELETE call for anything not wired into a dedicated
 action.
 
 The Network/Localization/Users endpoints beyond what `agama-demo.py` already

@@ -920,6 +920,87 @@ SCRIPTS_MENU = [
 ]
 
 
+# --- Files (deploy content or download-to-target onto the installed target) -
+# PUT /api/files/ queues a list of UserFile{content|url, destination,
+# permissions, user, group}; POST /api/files/write actually writes them --
+# always chroot'd, into /mnt/<destination> on the target (agama-lib/src/
+# files/model.rs: UserFile::write() hardcodes "chroot /mnt install -d ..."
+# then "chroot /mnt chown ..."). This only makes sense once /mnt holds a real
+# target (same timing constraint as "post" scripts). FileSource is untagged
+# content-or-url, so a "url" source makes Agama itself fetch and write it --
+# effectively a download-to-target primitive. There is no read-back: like
+# scripts, this is push-only.
+
+def files_list(client):
+    client.get("files")
+
+
+def files_add(client):
+    ok, existing = client.get("files", show=False)
+    existing = existing if ok and isinstance(existing, list) else []
+
+    destination = input("Destination path on target (e.g. /etc/myapp/config.conf): ").strip()
+    if not destination:
+        error("Destination is required.")
+        return
+    source_kind = input("Source: (c)ontent or (u)rl? [c]: ").strip().lower() or "c"
+    if source_kind == "u":
+        url = input("Source URL: ").strip()
+        if not url:
+            error("URL is required.")
+            return
+        entry = {"url": url}
+    else:
+        print("File content -- paste/type it, end with a single '.' on its own line:")
+        lines = []
+        while True:
+            line = input()
+            if line == ".":
+                break
+            lines.append(line)
+        entry = {"content": "\n".join(lines) + "\n"}
+
+    permissions = input("Permissions (octal) [0644]: ").strip() or "0644"
+    user = input("Owner user [root]: ").strip() or "root"
+    group = input("Owner group [root]: ").strip() or "root"
+    entry.update({"destination": destination, "permissions": permissions, "user": user, "group": group})
+
+    ok, _, _ = client.call("PUT", "files", existing + [entry])
+    if ok:
+        success(f"Queued '{destination}' ({len(existing) + 1} file(s) total). Use 'Write queued files' to deploy.")
+
+
+def files_write(client):
+    """Actually performs the chroot'd write -- real filesystem changes on the
+    target, same caution level as running a 'post' script."""
+    ok, queued = client.get("files", show=False)
+    if ok and queued:
+        for f in queued:
+            print(f"  -> {f.get('destination')}")
+    if input(f"{YELLOW}Write all queued files to the target now? [y/N]{ENDC} ").strip().lower() != "y":
+        log("Cancelled.")
+        return
+    ok, _, _ = client.call("POST", "files/write")
+    if ok:
+        success("Files written to the target.")
+
+
+def files_clear(client):
+    if input(f"{YELLOW}Clear the queued files list? [y/N]{ENDC} ").strip().lower() != "y":
+        return
+    ok, _, _ = client.call("PUT", "files", [])
+    if ok:
+        success("Queued files cleared.")
+
+
+FILES_MENU = [
+    ("List queued files", files_list),
+    ("Add a file (content or download-from-URL)", files_add),
+    ("Write queued files to the target (executes now)", files_write),
+    ("Clear queued files", files_clear),
+]
+
+
 # --- Live event stream (websocket) -----------------------------------------
 
 async def _watch_events_async(client):
@@ -950,6 +1031,69 @@ def watch_events(client):
     except KeyboardInterrupt:
         print()
         log("Stopped watching events.")
+    except Exception as exc:  # noqa: BLE001 -- surfacing any websocket error to the demo presenter
+        error(f"Websocket error: {exc}")
+
+
+# --- Filtered package-install progress (websocket) --------------------------
+# There is no polling-friendly "current package" field on GET
+# /api/manager/installer -- it only reports coarse phase/isBusy/canInstall.
+# Per-package detail (e.g. "Installing curl", step 698/742) only exists as
+# ProgressChanged events on the /ws stream, one per D-Bus service
+# (.../Manager1, .../Storage1, .../Software1). This filters that stream down
+# to a single updating progress line instead of the raw event dump.
+
+def _progress_bar(current, maximum, width=30):
+    if not maximum:
+        return "?" * width
+    filled = int(width * current / maximum)
+    return "#" * filled + "-" * (width - filled)
+
+
+async def _watch_package_progress_async(client):
+    uri = f"wss://{client.ip}/api/ws"
+    ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+    headers = {"Authorization": f"Bearer {client.token}"}
+    log(f"Connecting to {uri} (Ctrl-C to stop)...")
+    async with websockets.connect(uri, ssl=ssl_ctx, additional_headers=headers) as ws:
+        async for raw in ws:
+            try:
+                event = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            etype = event.get("type")
+            if etype == "InstallationPhaseChanged":
+                phase = PHASES.get(event.get("phase"), event.get("phase"))
+                print(f"\n{BOLD}{YELLOW}=== Phase: {phase} ==={ENDC}")
+            elif etype == "ProgressChanged":
+                service = (event.get("path") or "").rsplit("/", 1)[-1] or "?"
+                current = event.get("currentStep", 0)
+                maximum = event.get("maxSteps", 0)
+                title = event.get("currentTitle") or ""
+                if event.get("finished"):
+                    print(f"\r[{service}] {GREEN}done{ENDC}" + " " * 60)
+                else:
+                    bar = _progress_bar(current, maximum)
+                    print(f"\r[{service}] [{bar}] {current}/{maximum} {title:<50}", end="", flush=True)
+            elif etype == "IssuesChanged" and event.get("issues"):
+                print(f"\n{YELLOW}[!] Issues on {event.get('path')}: {event.get('issues')}{ENDC}")
+
+
+def watch_package_progress(client):
+    if not HAVE_WEBSOCKETS:
+        error("The 'websockets' package isn't installed -- run: pip install websockets")
+        return
+    if not client.token:
+        error("No auth token cached -- re-authenticate first.")
+        return
+    import asyncio
+    try:
+        asyncio.run(_watch_package_progress_async(client))
+    except KeyboardInterrupt:
+        print()
+        log("Stopped watching progress.")
     except Exception as exc:  # noqa: BLE001 -- surfacing any websocket error to the demo presenter
         error(f"Websocket error: {exc}")
 
@@ -992,6 +1136,7 @@ CATEGORIES = [
     ("Questions", QUESTIONS_MENU),
     ("Hostname", HOSTNAME_MENU),
     ("Scripts (executes real commands on the target)", SCRIPTS_MENU),
+    ("Files (deploy content or download-to-target)", FILES_MENU),
 ]
 
 
@@ -1030,7 +1175,8 @@ def main():
         sys.exit(1)
 
     top_level_extra = [
-        ("Watch live event stream (websocket)", watch_events),
+        ("Watch live event stream (websocket, raw)", watch_events),
+        ("Watch package install progress (filtered)", watch_package_progress),
         ("Re-authenticate", action_reauth),
         ("Raw API call (any endpoint)", raw_call),
     ]
