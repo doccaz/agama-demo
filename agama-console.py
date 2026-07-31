@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Interactive menu for driving a running Agama live installer over its HTTP
-API, one atomic action at a time -- for demoing fine-grained API control
-(as opposed to agama-demo.py's scripted end-to-end flow).
+API, one atomic action at a time. Also offers a scripted end-to-end flow
+(Storage -> "Run full scripted install") that loads a predefined profile,
+probes, and installs without leaving the menu -- so this one script covers
+both fine-grained API exploration and the canned demo flow.
 
 Verified against the `SLE-16` branch of https://github.com/agama-project/agama
 (the branch that ships in both SLES 16.0 and 16.1). There is no self-served
@@ -508,6 +510,60 @@ def st_load_full_profile(client):
         success(f"Profile '{name}' applied.")
 
 
+def st_run_scripted_install(client):
+    """End-to-end scripted flow: load a full profile, probe_sync, confirm,
+    trigger install, then watch to Finish. This is agama-demo.py's old
+    run_demo() sequence, folded in here so profile-driven installs and
+    atomic API exploration live in one script."""
+    names = list(STORAGE_PRESETS)
+    for i, name in enumerate(names, 1):
+        print(f"  {i}) {name} - {STORAGE_PRESETS[name]['desc']}")
+    choice = input("Profile [number]: ").strip()
+    try:
+        name = names[int(choice) - 1]
+    except (ValueError, IndexError):
+        error("Invalid choice.")
+        return
+    preset = STORAGE_PRESETS[name]
+
+    disk = pick_disk(client)
+    if not disk:
+        return
+
+    ok, products = client.get("software/products", show=False)
+    product_id = products[0]["id"] if ok and products else "SLES"
+
+    log(f"Applying profile '{name}' (hostname, root password, product={product_id}, storage on {disk})...")
+    client.call("PUT", "hostname/config", {"static": f"sles16-{name}"})
+    client.call("PATCH", "users/root", {"password": DEFAULT_PASSWORD})
+    ok, current = client.get("software/config", show=False)
+    if ok and current.get("product") != product_id:
+        client.call("PUT", "software/config", {"product": product_id})
+    ok, _, _ = client.call("PUT", "storage/config", {"storage": preset["build"](disk)})
+    if not ok:
+        return
+    success(f"Profile '{name}' applied.")
+
+    log("Re-probing so the new config is picked up before installing...")
+    ok, _, _ = client.call("POST", "manager/probe_sync", timeout=300)
+    if not ok:
+        return
+    success("Probe complete.")
+
+    ok, status = client.get("manager/installer", show=False)
+    if ok and not status.get("canInstall"):
+        warn("canInstall is false -- probe/config may be incomplete.")
+    if input(f"{YELLOW}Trigger install now? [y/N]{ENDC} ").strip().lower() != "y":
+        log("Cancelled.")
+        return
+    ok, _, _ = client.call("POST", "manager/install")
+    if not ok:
+        return
+    success("Install triggered.")
+
+    mgr_watch_progress(client)
+
+
 def st_probe(client):
     log("Probing storage...")
     ok, _, _ = client.call("POST", "storage/probe", timeout=300)
@@ -545,6 +601,7 @@ STORAGE_MENU = [
     ("Show storage config", st_show_config),
     ("Load storage layout preset (on-the-fly)", st_load_preset),
     ("Load full profile (hostname+root+product+storage)", st_load_full_profile),
+    ("Run full scripted install (profile -> probe -> install -> wait for finish)", st_run_scripted_install),
     ("Probe storage", st_probe),
     ("Reprobe storage", st_reprobe),
     ("Reactivate storage", st_reactivate),

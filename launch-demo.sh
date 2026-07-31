@@ -13,7 +13,7 @@
 #   manager.install() unconditionally UNLESS the kernel command line also has
 #   inst.install=0. With install suppressed, the web UI/API comes up and sits
 #   in the Config phase with a known root password, ready to be driven
-#   remotely via agama-demo.py to demo the Startup/Config/Install/Finish
+#   remotely via agama-console.py to demo the Startup/Config/Install/Finish
 #   states live. See README.md "Live API demo" section.
 #
 # Kernel parameter note: the customer-facing SLES 16.0 "Automated
@@ -138,8 +138,9 @@ echo "[*]   Then SSH/HTTPS/API are reached directly at that IP (22 / 443), no po
 if [ "$MANUAL" -eq 1 ]; then
     echo "[*] MANUAL mode: profile config will load but install will NOT auto-trigger."
     echo "[*] Once the console shows the Agama service is up, drive it remotely with:"
-    echo "[*]   ./agama-demo.py <guest-ip>:443 $LIVE_PASSWORD --sles-version 16.1"
-    echo "[*]   (agama-demo.py builds https://<ip[:port]>/api from that first argument)"
+    echo "[*]   ./agama-console.py <guest-ip>:443 --password $LIVE_PASSWORD"
+    echo "[*]   (agama-console.py builds https://<ip[:port]>/api from that first argument;"
+    echo "[*]   use Storage -> 'Run full scripted install' to drive a predefined profile end-to-end)"
 fi
 
 qemu-system-x86_64 \

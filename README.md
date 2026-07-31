@@ -110,19 +110,20 @@ Once the console (or VNC) shows the installer has booted and settled, drive
 it from another machine (or the same one) with:
 
 ```bash
-./agama-demo.py <guest-ip>:443 DemoSecurity2026! --sles-version 16.1
+./agama-console.py <guest-ip>:443 --password DemoSecurity2026!
 ```
 
 (that password is the live installer's `live.password=`, not the profile's
 `root.password` — they happen to share the same default value in this repo,
 which is convenient but easy to misread as the same setting).
 
-`agama-demo.py` authenticates, shows the current phase, lets you pick a
-storage profile from a menu, applies hostname/root-password/software/storage
-config over the API (re-probing so it's picked up), then pauses on
-"Press ENTER to trigger INSTALL..." — a natural break point for narrating
-what's about to happen before you hit enter and watch the phase counter
-advance to `Finish`.
+`agama-console.py` authenticates and drops into a category menu. For the
+scripted end-to-end flow, go to **Storage → "Run full scripted install"**: it
+lets you pick a storage profile, applies hostname/root-password/software/
+storage config over the API (re-probing so it's picked up), then pauses on
+"Trigger install now? [y/N]" — a natural break point for narrating what's
+about to happen before you confirm and watch the phase counter advance to
+`Finish`.
 
 Anything shown mid-demo (e.g. `GET /api/manager/installer` for the raw phase
 JSON, or `GET /api/storage/devices/system`) can also just be curled directly
@@ -144,17 +145,19 @@ after install+reboot, not the live installer's own root password (see
 
 ## Driving a running installer over its HTTP API
 
-Instead of (or in addition to) `inst.auto=`, `agama-demo.py` can drive an
+Instead of (or in addition to) `inst.auto=`, `agama-console.py` can drive an
 **already-booted** Agama installer interactively over its REST API:
 
 ```bash
-./agama-demo.py <installer-ip> <root-password> [--sles-version 16.0|16.1]
+./agama-console.py <installer-ip> [--password DemoSecurity2026!]
 ```
 
-It authenticates, lists disks and products, lets you pick `atm-slim` or
-`atm-full` from a menu, applies hostname/root-password/software/storage
-config, re-probes, and triggers the install — polling until it reaches the
-`Finish` phase.
+Storage → "Run full scripted install" authenticates, lists disks and
+products, lets you pick `atm-slim`, `atm-full`, or `atm-full-16.0` from a
+menu, applies hostname/root-password/software/storage config, re-probes, and
+triggers the install — polling until it reaches the `Finish` phase. See
+[Fine-grained API control](#fine-grained-api-control-agama-consolepy) below
+for the rest of the menu.
 
 Key facts about the Agama API (baked into this script; see its docstring for
 detail):
@@ -175,24 +178,21 @@ detail):
   — check `GET` first and only `PUT` on an actual change.
 - TPM2 auto-unlock (`encryption.luks2.tpm`) only exists since Agama 16.1.
 
-> `agama-api-profiles-demo.py` is an **older/stale sketch** of the same idea
-> (hits a `/api/v0` prefix and a different storage/security schema that no
-> longer matches the current Agama API). Prefer `agama-demo.py`.
-
 ## Fine-grained API control (`agama-console.py`)
 
 ```bash
 ./agama-console.py <installer-ip> [--password DemoSecurity2026!]
 ```
 
-Where `agama-demo.py` runs one scripted end-to-end flow, `agama-console.py` is
-a category-based menu of atomic API actions for demoing the API surface piece
-by piece. There's no self-served OpenAPI/Swagger listing on a running
-installer to build this from — Agama's `aide`-generated spec is only
-reachable via `agama-web-server doc` on the server host, and that subcommand
-isn't even compiled into the SLES 16.0 GM build — so the menu was built by
-reading the route tables straight out of `agama-server/src/*/web.rs` on the
-`SLE-16` branch.
+`agama-console.py` is a category-based menu of atomic API actions for
+demoing the API surface piece by piece, plus (Storage → "Run full scripted
+install") the scripted end-to-end profile flow described above — one script
+covers both, so there's no separate `agama-demo.py` anymore. There's no
+self-served OpenAPI/Swagger listing on a running installer to build this
+from — Agama's `aide`-generated spec is only reachable via `agama-web-server
+doc` on the server host, and that subcommand isn't even compiled into the
+SLES 16.0 GM build — so the menu was built by reading the route tables
+straight out of `agama-server/src/*/web.rs` on the `SLE-16` branch.
 
 Categories: **Manager** (status, probe/probe_sync/reprobe_sync, trigger
 install, watch progress, **finish install** — reboot/halt/stop/poweroff the
@@ -252,8 +252,8 @@ streamed straight to a `.tar.gz` on disk); and a raw
 GET/POST/PUT/PATCH/DELETE call for anything not wired into a dedicated
 action.
 
-The Network/Localization/Users endpoints beyond what `agama-demo.py` already
-exercises are wired in from the source route tables but not all hand-tested
+The Network/Localization/Users endpoints beyond what the scripted-install
+flow already exercises are wired in from the source route tables but not all hand-tested
 against a live installer — if one 404s/400s on your Agama version, fall back
 to the raw API call action to explore it live instead.
 
@@ -274,9 +274,8 @@ agama-demo/
 ├── launch-demo.sh                  one-command unattended install + boot
 ├── serve-profiles.sh               HTTP server for profiles/
 ├── start-tpm.sh                    stand-alone swtpm launcher
-├── agama-demo.py                   drives a running installer over its HTTP API
-├── agama-console.py                interactive menu of atomic Agama API actions
-├── agama-api-profiles-demo.py      stale early sketch — superseded by agama-demo.py
+├── agama-console.py                interactive menu of atomic Agama API actions,
+│                                     plus a scripted end-to-end profile flow
 ├── profiles/
 │   ├── atm-slim.jsonnet
 │   ├── atm-full.jsonnet

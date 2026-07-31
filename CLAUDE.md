@@ -19,22 +19,18 @@ QEMU. `--manual` appends `inst.install=0` so Agama loads config but never auto-i
 sitting in the `Config` phase for a live API demo. Serial console is attached to the terminal.
 
 ```bash
-./agama-demo.py <host:port> <root-password> [--sles-version 16.0|16.1]
-```
-Drives a running Agama installer over its REST API: authenticates, picks a storage profile from a
-menu, applies hostname/root-password/software/storage config, re-probes, pauses before triggering
-install, then polls to `Finish`. Used both against `launch-demo.sh --manual` VMs
-(`./agama-demo.py <guest-ip>:443 DemoSecurity2026! --sles-version 16.1`) and any other reachable
-installer.
-
-```bash
 ./agama-console.py <installer-ip> [--password DemoSecurity2026!]
 ```
-Category-based menu of atomic Agama API actions, for demoing the API surface piece by piece rather
-than `agama-demo.py`'s scripted flow. Built by reading route tables straight out of
-`agama-server/src/*/web.rs` on the `SLE-16` branch — there's no self-served OpenAPI listing on a
-running installer (`aide` generates one, but only via the `agama-web-server doc` CLI subcommand on
-the server, which isn't even compiled into the SLES 16.0 GM build).
+Category-based menu of atomic Agama API actions, for demoing the API surface piece by piece. Also
+folds in the scripted end-to-end flow (Storage → "Run full scripted install"): authenticates,
+picks a storage profile (`atm-slim`/`atm-full`/`atm-full-16.0`) from a menu, applies hostname/
+root-password/software/storage config, re-probes, pauses before triggering install, then polls to
+`Finish`. Used both against `launch-demo.sh --manual` VMs
+(`./agama-console.py <guest-ip>:443 --password DemoSecurity2026!`, then Storage → "Run full
+scripted install") and any other reachable installer. Built by reading route tables straight out
+of `agama-server/src/*/web.rs` on the `SLE-16` branch — there's no self-served OpenAPI listing on
+a running installer (`aide` generates one, but only via the `agama-web-server doc` CLI subcommand
+on the server, which isn't even compiled into the SLES 16.0 GM build).
 
 Categories: **Manager** (status, probe/probe_sync/reprobe_sync, trigger install, watch progress,
 **finish** — `POST manager/finish` with body `"reboot"`/`"halt"`/`"stop"`/`"poweroff"`, default
@@ -83,21 +79,21 @@ Reboot-to-verify was confirmed end-to-end: `POST manager/finish "reboot"` cleanl
 the live installer into the just-installed target — no reinstall needed — and the target comes up
 correctly (`hostnamectl`, `uptime 0:00`, SSH as root all checked out on a real `atm-slim` run).
 
-Network/Localization/Users actions beyond what `agama-demo.py` already exercises are wired in from
-source but not all hand-tested against a live installer — if one 404s/400s, use the raw-call action
-to explore live instead of trusting the guessed shape.
+Network/Localization/Users actions beyond what the scripted-install flow already exercises are
+wired in from source but not all hand-tested against a live installer — if one 404s/400s, use the
+raw-call action to explore live instead of trusting the guessed shape.
 
 ```bash
 ./serve-profiles.sh [port]   # stand-alone HTTP server for profiles/, default port 8000
 ./start-tpm.sh                # stand-alone swtpm launcher (state in /tmp/mytpm), independent of launch-demo.sh
-python3 -m py_compile agama-demo.py      # sanity-check the script parses
 python3 -m py_compile agama-console.py   # sanity-check the script parses
 bash -n launch-demo.sh                # sanity-check the script parses
 jsonnet profiles/atm-slim.jsonnet     # validate/expand a profile
 ```
 
-`agama-api-profiles-demo.py` is a stale early sketch (targets a `/api/v0` prefix and an old
-storage/security schema) — superseded by `agama-demo.py`; don't extend it.
+`agama-demo.py` and `agama-api-profiles-demo.py` (an even older stale sketch, `/api/v0` prefix and
+a storage/security schema that no longer matches the API) were removed once `agama-console.py`
+gained the "Run full scripted install" action — everything now lives in one script.
 
 ## Requirements / environment assumptions
 
@@ -140,10 +136,10 @@ Per `rust/agama-autoinstall/src/main.rs` (SLE-16 branch) in the agama repo: the 
 helper always applies the `inst.auto=` profile (hostname, product, target-system root password,
 storage, ...) first, then unconditionally calls `POST /api/manager/install` — unless
 `inst.install=0` is also on the kernel command line. `launch-demo.sh --manual` sets that flag, so
-config loads but install never auto-fires, letting `agama-demo.py` (or curl) drive the
+config loads but install never auto-fires, letting `agama-console.py` (or curl) drive the
 Startup → Config → Install → Finish phase transitions live for a demo.
 
-### Agama HTTP API shape (baked into `agama-demo.py`/`agama-console.py`; see their docstrings for full detail)
+### Agama HTTP API shape (baked into `agama-console.py`; see its docstring for full detail)
 
 - No `/api/v0`/`/api/v1` prefix — every module is mounted directly under `/api/<module>` (e.g.
   `/api/storage`, `/api/manager`).
