@@ -305,6 +305,28 @@ def mgr_logs_list(client):
     client.get("manager/logs/list")
 
 
+def mgr_logs_download(client):
+    """GET /api/manager/logs/store streams a gzip tarball (Content-Disposition:
+    attachment; filename="agama-logs.tar.gz"). Not JSON, so this bypasses
+    client.call() and streams the response body straight to disk."""
+    path = input("Save logs to [agama-logs.tar.gz]: ").strip() or "agama-logs.tar.gz"
+    url = f"{client.api_root}/manager/logs/store"
+    try:
+        r = client.session.get(url, stream=True, timeout=120)
+    except requests.RequestException as exc:
+        error(str(exc))
+        return
+    if r.status_code != 200:
+        error(f"GET manager/logs/store -> {r.status_code}: {r.text[:300]}")
+        return
+    size = 0
+    with open(path, "wb") as f:
+        for chunk in r.iter_content(chunk_size=65536):
+            f.write(chunk)
+            size += len(chunk)
+    success(f"Logs saved to {path} ({size} bytes).")
+
+
 MANAGER_MENU = [
     ("Show installer status", mgr_status),
     ("Probe (async)", mgr_probe),
@@ -314,6 +336,7 @@ MANAGER_MENU = [
     ("Watch install progress", mgr_watch_progress),
     ("Finish install: reboot/halt/stop/poweroff target", mgr_finish),
     ("List available logs", mgr_logs_list),
+    ("Download logs (tar.gz)", mgr_logs_download),
 ]
 
 
