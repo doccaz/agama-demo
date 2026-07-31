@@ -196,8 +196,14 @@ reading the route tables straight out of `agama-server/src/*/web.rs` on the
 
 Categories: **Manager** (status, probe/probe_sync/reprobe_sync, trigger
 install, watch progress, **finish install** — reboot/halt/stop/poweroff the
-target, list logs), **Software** (products, config, patterns, repositories,
-licenses, proposal, probe, registration status), **Storage** (disks, config,
+target, list logs), **Software** (products, config, patterns, **list/add/
+clear repositories** — `PUT software/config extraRepositories`; adding a repo
+whose metadata Agama can actually reach makes it try to synchronously refresh
+it, which can block the request for a long time on a large/slow repo — the
+config layer echoes back whatever `enabled` you asked for, but `GET
+software/repositories` shows the real zypper-backend state, which flips to
+`enabled:false, loaded:false` if the repo couldn't be loaded, licenses,
+proposal, probe, registration status), **Storage** (disks, config,
 storage-layout presets applied on-the-fly, bundled full-profile load, probe/
 reprobe/reactivate, raw device/action listings), **Network**, **Localization**
 (keymaps/locales/timezones/config), **Users** (root, first user, password
@@ -210,7 +216,14 @@ whatever the API reaches: `pre`/`postPartitioning` scripts run in the live
 installer environment, `post` scripts run chroot'd into the installed target
 by default, `init` scripts are written now but only run on the target's
 first boot; verified live this session, stdout/stderr/exit status land in
-`/run/agama/scripts/<group>/<name>.{log,err,out}`). Three top-level extras
+`/run/agama/scripts/<group>/<name>.{log,err,out}`. Only `pre` is auto-run by
+Agama itself, right after profile load — `postPartitioning`/`post`/`init`
+are never auto-triggered anywhere in the Rust codebase, so they only run
+when explicitly invoked over the API. Chroot isolation for `post` was
+verified end-to-end: a marker file written by the script landed at
+`/mnt/root/<file>` from the live installer's view and was absent from the
+live environment's own `/root` — genuine `chroot /mnt`, not the live env).
+Three top-level extras
 round it out: a live event stream over the `/ws` websocket (needs
 `pip install websockets`, or on openSUSE/SLE `zypper install
 python313-websockets`; degrades to a clear error if missing), log download

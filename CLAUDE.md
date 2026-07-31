@@ -38,7 +38,12 @@ the server, which isn't even compiled into the SLES 16.0 GM build).
 
 Categories: **Manager** (status, probe/probe_sync/reprobe_sync, trigger install, watch progress,
 **finish** — `POST manager/finish` with body `"reboot"`/`"halt"`/`"stop"`/`"poweroff"`, default
-`reboot`, to reboot/halt/poweroff the installed target — list logs), **Software**, **Storage**
+`reboot`, to reboot/halt/poweroff the installed target — list logs), **Software** (products, config,
+patterns, **repositories** — `PUT software/config {"extraRepositories": [...]}`; adding a repo
+Agama can actually reach makes it synchronously try to refresh it, which can block the request for
+a long time on a large/slow one — the config layer echoes back the `enabled` you requested, but
+`GET software/repositories` reflects the real zypper state and flips to `enabled:false,
+loaded:false` if the repo failed to load — verified live both ways), **Storage**
 (disks, config, storage-layout presets applied on-the-fly, bundled full-profile load, probe/
 reprobe/reactivate, device/action listings), **Network**, **Localization** (l10n), **Users** (root,
 first user, password check), **Questions** (list/answer — LUKS passphrase prompts get a *new*
@@ -49,7 +54,13 @@ that group — real command execution: `pre`/`postPartitioning` run in the live 
 `post` runs chroot'd into `/mnt` by default, `init` is written now but only runs on the target's
 first boot; output lands in `/run/agama/scripts/<group>/<name>.{log,err,out}`; `DELETE scripts`
 `remove_dir_all`s the whole group tree including those logs — verified live, including that
-ordering gotcha). Three top-level extras: a live event stream over the `/ws` websocket (needs
+ordering gotcha. Only `pre` is auto-run by Agama itself (right after profile load, in
+`agama-lib/src/store.rs`) — `postPartitioning`/`post`/`init` are never auto-triggered anywhere in
+the Rust codebase, so they only run when the API client (this console, or the web UI) explicitly
+calls `POST scripts/run`. The chroot isolation was verified end-to-end against a completed
+`atm-slim` install: a `post` script's marker file landed at `/mnt/root/<file>` from the live
+installer's view and was absent from the live environment's own `/root` — genuine `chroot /mnt`,
+not just execution in the live env). Three top-level extras: a live event stream over the `/ws` websocket (needs
 `pip install websockets`, or `zypper install python313-websockets`; degrades to a clear error if
 missing), log download (`GET manager/logs/store` streamed to a `.tar.gz`), and a raw
 GET/POST/PUT/PATCH/DELETE call for anything not covered by a dedicated action.
