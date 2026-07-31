@@ -853,6 +853,41 @@ def scripts_add(client):
         success(f"Script '{name}' added to group '{group}'.")
 
 
+def scripts_adhoc(client):
+    """Convenience wrapper: there's no dedicated 'run one command' endpoint in
+    the Agama API -- /api/scripts is the only command-execution primitive, and
+    it's file-based (add a script, then run its whole group). This collapses
+    add+run into one step for a single command. There's also no API endpoint
+    to read stdout back over HTTP -- only via the filesystem (SSH/console),
+    same as any other script; the path is printed below."""
+    print("  1) pre               - runs now, in the live installer env")
+    print("  2) postPartitioning  - runs now, in the live installer env")
+    print("  3) post              - runs now, chroot'd into the installed target by default")
+    choice = input("Where to run it [1-3]: ").strip()
+    group = {"1": "pre", "2": "postPartitioning", "3": "post"}.get(choice)
+    if not group:
+        error("Invalid choice.")
+        return
+    command = input("Command to run: ").strip()
+    if not command:
+        return
+    name = f"adhoc-{int(time.time())}"
+    body = {"type": group, "name": name, "content": f"#!/bin/bash\n{command}\n"}
+    if group == "post":
+        chroot = input("Run chrooted into the installed target? [Y/n]: ").strip().lower()
+        body["chroot"] = chroot != "n"
+    if input(f"{YELLOW}Run '{command}' now? [y/N]{ENDC} ").strip().lower() != "y":
+        log("Cancelled.")
+        return
+    ok, _, _ = client.call("POST", "scripts", body)
+    if not ok:
+        return
+    ok, _, _ = client.call("POST", "scripts/run", group)
+    if ok:
+        success(f"Ran. Output at /run/agama/scripts/{group}/{name}.{{log,err,out}} on the target "
+                "(fetch via SSH/console -- the API has no stdout read-back endpoint).")
+
+
 def scripts_run(client):
     print("  1) pre  2) postPartitioning  3) post  4) init (won't actually run -- see note above)")
     choice = input("Group to run [1-4]: ").strip()
@@ -878,6 +913,7 @@ def scripts_clear(client):
 
 SCRIPTS_MENU = [
     ("List defined scripts", scripts_list),
+    ("Run one ad-hoc command now", scripts_adhoc),
     ("Add a script", scripts_add),
     ("Run a script group (executes commands)", scripts_run),
     ("Remove all scripts", scripts_clear),
