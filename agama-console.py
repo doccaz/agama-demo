@@ -760,6 +760,94 @@ HOSTNAME_MENU = [
 ]
 
 
+# --- Scripts (real command execution on the target) -------------------------
+# POST /api/scripts adds a Script{type, name, content|url, chroot?}; POST
+# /api/scripts/run{group} executes every added script of that group and
+# writes <name>.log/.err/.out under /run/agama/scripts/<group>/ on the
+# machine running the live installer. Verified live this session: a "pre"
+# script's stdout/stderr/exit status showed up exactly where documented.
+#
+# Groups (agama_lib::scripts::ScriptsGroup, camelCase over the wire):
+#   pre               -- runs before the installation starts, in the live env
+#   postPartitioning  -- runs right after partitioning, in the live env
+#   post              -- runs after install finishes; chroot'd into /mnt
+#                        (the target system) unless chroot=false
+#   init              -- written out but NOT run by /run; it runs on first
+#                        boot of the installed target instead
+#
+# This is genuine command execution against whatever the API reaches (the
+# live installer environment for pre/postPartitioning, or the installed
+# target's root for post/init) -- treat it with the same care as SSH access.
+
+SCRIPT_GROUPS = {"1": "pre", "2": "postPartitioning", "3": "post", "4": "init"}
+
+
+def scripts_list(client):
+    client.get("scripts")
+
+
+def scripts_add(client):
+    print("  1) pre               - before install starts (runs in the live env)")
+    print("  2) postPartitioning  - right after partitioning (live env)")
+    print("  3) post              - after install finishes (chroot'd into target by default)")
+    print("  4) init              - written now, runs on first boot of the target instead")
+    choice = input("Script group [1-4]: ").strip()
+    group = SCRIPT_GROUPS.get(choice)
+    if not group:
+        error("Invalid choice.")
+        return
+    name = input("Script name: ").strip()
+    if not name:
+        error("Name is required.")
+        return
+    print("Script content -- paste/type it, end with a single '.' on its own line:")
+    lines = []
+    while True:
+        line = input()
+        if line == ".":
+            break
+        lines.append(line)
+    content = "\n".join(lines) + "\n"
+    body = {"type": group, "name": name, "content": content}
+    if group == "post":
+        chroot = input("Run chrooted into the installed target? [Y/n]: ").strip().lower()
+        body["chroot"] = chroot != "n"
+    ok, _, _ = client.call("POST", "scripts", body)
+    if ok:
+        success(f"Script '{name}' added to group '{group}'.")
+
+
+def scripts_run(client):
+    print("  1) pre  2) postPartitioning  3) post  4) init (won't actually run -- see note above)")
+    choice = input("Group to run [1-4]: ").strip()
+    group = SCRIPT_GROUPS.get(choice)
+    if not group:
+        error("Invalid choice.")
+        return
+    if input(f"{YELLOW}Run all '{group}' scripts now? This executes real commands. [y/N]{ENDC} ").strip().lower() != "y":
+        log("Cancelled.")
+        return
+    ok, _, _ = client.call("POST", "scripts/run", group)
+    if ok:
+        success(f"Ran scripts in group '{group}' (check .log/.err/.out under /run/agama/scripts/{group}/ on the target).")
+
+
+def scripts_clear(client):
+    if input(f"{YELLOW}Remove ALL defined scripts (every group)? [y/N]{ENDC} ").strip().lower() != "y":
+        return
+    ok, _, _ = client.call("DELETE", "scripts")
+    if ok:
+        success("All scripts removed.")
+
+
+SCRIPTS_MENU = [
+    ("List defined scripts", scripts_list),
+    ("Add a script", scripts_add),
+    ("Run a script group (executes commands)", scripts_run),
+    ("Remove all scripts", scripts_clear),
+]
+
+
 # --- Live event stream (websocket) -----------------------------------------
 
 async def _watch_events_async(client):
@@ -831,6 +919,7 @@ CATEGORIES = [
     ("Users", USERS_MENU),
     ("Questions", QUESTIONS_MENU),
     ("Hostname", HOSTNAME_MENU),
+    ("Scripts (executes real commands on the target)", SCRIPTS_MENU),
 ]
 
 
