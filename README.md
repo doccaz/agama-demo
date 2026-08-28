@@ -194,68 +194,89 @@ doc` on the server host, and that subcommand isn't even compiled into the
 SLES 16.0 GM build — so the menu was built by reading the route tables
 straight out of `agama-server/src/*/web.rs` on the `SLE-16` branch.
 
-Categories: **Manager** (status, probe/probe_sync/reprobe_sync, trigger
-install, watch progress, **finish install** — reboot/halt/stop/poweroff the
-target, list logs), **Software** (products, config, patterns, licenses,
-proposal, probe, registration status, **list/add/clear repositories** —
-`PUT software/config extraRepositories`; adding a repo whose metadata Agama
-can actually reach makes it try to synchronously refresh it, which can block
-the request for a long time on a large/slow repo — the config layer echoes
-back whatever `enabled` you asked for, but `GET software/repositories` shows
-the real zypper-backend state, which flips to `enabled:false, loaded:false`
-if the repo couldn't be loaded), **Storage** (disks, config,
-storage-layout presets applied on-the-fly, bundled full-profile load, probe/
-reprobe/reactivate, raw device/action listings), **Network**, **Localization**
-(keymaps/locales/timezones/config), **Users** (root, first user, password
-check), **Questions** (list/answer pending questions — e.g. the LUKS
-passphrase prompt raised whenever probing an already-encrypted disk; each
-re-probe raises a *new* question id, answering one doesn't pre-empt the next
-— and setting the auto/user answer policy), **Hostname**, and **Scripts**
-(add/run/clear user-defined scripts — genuine command execution against
-whatever the API reaches: `pre`/`postPartitioning` scripts run in the live
-installer environment, `post` scripts run chroot'd into the installed target
-by default, `init` scripts are written now but only run on the target's
-first boot; verified live this session, stdout/stderr/exit status land in
-`/run/agama/scripts/<group>/<name>.{log,err,out}`. Only `pre` is auto-run by
-Agama itself, right after profile load — `postPartitioning`/`post`/`init`
-are never auto-triggered anywhere in the Rust codebase, so they only run
-when explicitly invoked over the API. Chroot isolation for `post` was
-verified end-to-end: a marker file written by the script landed at
-`/mnt/root/<file>` from the live installer's view and was absent from the
-live environment's own `/root` — genuine `chroot /mnt`, not the live env).
-There's no dedicated "run one command" endpoint in the Agama API — `scripts`
-(add + run) is the only command-execution primitive, and there's no way to
-read stdout back over HTTP, only via the filesystem — so a **"Run one ad-hoc
-command now"** action collapses add+run into a single step for a one-off
-command, verified live (`hostname; id; uname -a` executed and produced
-exactly the expected output). **Files** (`PUT /api/files/` queues
-`UserFile{content|url, destination, permissions, user, group}` entries,
-`POST /api/files/write` actually writes them — always chroot'd into
-`/mnt/<destination>` on the target, same mechanism as `post` scripts but a
-different code path — `install -d` + write + `chown`, not a run script. A
-`url` source makes Agama itself fetch and write it, so this doubles as a
-download-to-target primitive. Same caveat as `post` scripts: `/mnt` is only
-mounted for a narrow window — Agama unmounts it on its own shortly after
-reaching `Finish`, even without an explicit reboot or any probe call, so
-chroot'd actions need to run promptly after the install completes).
+### Categories
 
-Four top-level extras round it out: a live event stream over the `/ws`
-websocket, raw (needs `pip install websockets`, or on openSUSE/SLE `zypper
-install python313-websockets`; degrades to a clear error if missing); a
-**filtered package-install progress view** — `GET manager/installer` only
-exposes coarse phase/isBusy/canInstall, so package-level detail (`"Installing
-curl"`, step 698/742) is only available via `ProgressChanged` events on
-`/ws`, which this renders as a single updating progress bar per D-Bus
-service instead of the raw event dump — verified live during an actual
-`atm-slim` package installation; log download (`GET manager/logs/store`,
-streamed straight to a `.tar.gz` on disk); and a raw
-GET/POST/PUT/PATCH/DELETE call for anything not wired into a dedicated
-action.
+- **Manager** — status, probe/probe_sync/reprobe_sync, trigger install,
+  watch progress, finish install (reboot/halt/stop/poweroff the target),
+  list/download logs.
+- **Software** — products, config, patterns, licenses, proposal, probe,
+  registration status.
+  - *Repositories*: list/add/clear custom repos
+    (`PUT software/config extraRepositories`). Adding a repo whose metadata
+    Agama can actually reach makes it synchronously try to refresh it, which
+    can block the request for a long time on a large/slow repo. The config
+    layer echoes back whatever `enabled` you asked for, but
+    `GET software/repositories` reflects the real zypper-backend state,
+    which flips to `enabled:false, loaded:false` if the repo couldn't be
+    loaded.
+- **Storage** — list disks, show config, load a storage-layout preset
+  on-the-fly, load a bundled full profile (hostname+root+product+storage),
+  run the full scripted install, probe/reprobe/reactivate, raw
+  device/action listings, candidate drives.
+- **Network** — state (show/set raw JSON), connections (list/show/connect/
+  disconnect), devices, wifi networks, apply config to the system.
+- **Localization (l10n)** — keymaps, locales, timezones, show/set config.
+- **Users** — root config/password, first (non-root) user
+  (show/set/remove), password strength check.
+- **Questions** — list/answer pending questions (e.g. the LUKS passphrase
+  prompt raised whenever probing an already-encrypted disk — each re-probe
+  raises a *new* question id, answering one doesn't pre-empt the next), set
+  the auto/user answer policy.
+- **Hostname** — show/set.
+- **Scripts** — genuine command execution against whatever the API reaches.
+  - Add/list/run a script group, remove all scripts, plus a **"Run one
+    ad-hoc command now"** action that collapses add+run into one step for a
+    single command — there's no dedicated "run one command" endpoint, and
+    no way to read stdout back over HTTP, only via the filesystem.
+  - `pre`/`postPartitioning` scripts run in the live installer environment;
+    `post` scripts run chroot'd into the installed target by default;
+    `init` scripts are written now but only run on the target's first boot.
+  - Only `pre` is auto-run by Agama itself, right after profile load —
+    `postPartitioning`/`post`/`init` are never auto-triggered anywhere in
+    the Rust codebase, so they only run when explicitly invoked over the
+    API.
+  - stdout/stderr/exit status land in
+    `/run/agama/scripts/<group>/<name>.{log,err,out}`.
+  - Chroot isolation for `post` was verified end-to-end: a marker file
+    written by the script landed at `/mnt/root/<file>` from the live
+    installer's view and was absent from the live environment's own
+    `/root` — genuine `chroot /mnt`, not the live env.
+- **Files** — deploy content or download-to-target.
+  - `PUT /api/files/` queues `UserFile{content|url, destination,
+    permissions, user, group}` entries; `POST /api/files/write` actually
+    writes them — always chroot'd into `/mnt/<destination>` on the target,
+    same mechanism as `post` scripts but a different code path
+    (`install -d` + write + `chown`, not a run script).
+  - A `url` source makes Agama itself fetch and write it, so this doubles
+    as a download-to-target primitive.
+  - Same caveat as `post` scripts: `/mnt` is only mounted for a narrow
+    window — Agama unmounts it on its own shortly after reaching `Finish`,
+    even without an explicit reboot or any probe call, so chroot'd actions
+    need to run promptly after the install completes.
+
+### Top-level extras (outside the category menus)
+
+- **Watch live event stream** — raw `/ws` websocket dump; needs
+  `pip install websockets`, or on openSUSE/SLE
+  `zypper install python313-websockets` (degrades to a clear error if
+  missing).
+- **Watch package install progress (filtered)** — `GET manager/installer`
+  only exposes coarse phase/isBusy/canInstall, so package-level detail
+  (`"Installing curl"`, step 698/742) is only available via
+  `ProgressChanged` events on `/ws`; this renders it as a single updating
+  progress bar per D-Bus service instead of the raw event dump — verified
+  live during an actual `atm-slim` package installation.
+- **Re-authenticate**.
+- **Raw API call** — any GET/POST/PUT/PATCH/DELETE against any endpoint,
+  for whatever isn't wired into a dedicated action.
+
+(Log listing/download lives inside the **Manager** category above, not
+here.)
 
 The Network/Localization/Users endpoints beyond what the scripted-install
-flow already exercises are wired in from the source route tables but not all hand-tested
-against a live installer — if one 404s/400s on your Agama version, fall back
-to the raw API call action to explore it live instead.
+flow already exercises are wired in from the source route tables but not
+all hand-tested against a live installer — if one 404s/400s on your Agama
+version, fall back to the raw API call action to explore it live instead.
 
 ## Other scripts
 
