@@ -127,7 +127,7 @@ about to happen before you confirm and watch the phase counter advance to
 
 Anything shown mid-demo (e.g. `GET /api/manager/installer` for the raw phase
 JSON, or `GET /api/storage/devices/system`) can also just be curled directly
-against `https://<host>:8443/api/...` with `-k` and the same auth cookie, if
+against `https://<host>:443/api/...` with `-k` and the same auth cookie, if
 you want to narrate raw API responses instead of the scripted flow.
 
 ## Profiles (`profiles/*.jsonnet`)
@@ -196,14 +196,14 @@ straight out of `agama-server/src/*/web.rs` on the `SLE-16` branch.
 
 Categories: **Manager** (status, probe/probe_sync/reprobe_sync, trigger
 install, watch progress, **finish install** — reboot/halt/stop/poweroff the
-target, list logs), **Software** (products, config, patterns, **list/add/
-clear repositories** — `PUT software/config extraRepositories`; adding a repo
-whose metadata Agama can actually reach makes it try to synchronously refresh
-it, which can block the request for a long time on a large/slow repo — the
-config layer echoes back whatever `enabled` you asked for, but `GET
-software/repositories` shows the real zypper-backend state, which flips to
-`enabled:false, loaded:false` if the repo couldn't be loaded, licenses,
-proposal, probe, registration status), **Storage** (disks, config,
+target, list logs), **Software** (products, config, patterns, licenses,
+proposal, probe, registration status, **list/add/clear repositories** —
+`PUT software/config extraRepositories`; adding a repo whose metadata Agama
+can actually reach makes it try to synchronously refresh it, which can block
+the request for a long time on a large/slow repo — the config layer echoes
+back whatever `enabled` you asked for, but `GET software/repositories` shows
+the real zypper-backend state, which flips to `enabled:false, loaded:false`
+if the repo couldn't be loaded), **Storage** (disks, config,
 storage-layout presets applied on-the-fly, bundled full-profile load, probe/
 reprobe/reactivate, raw device/action listings), **Network**, **Localization**
 (keymaps/locales/timezones/config), **Users** (root, first user, password
