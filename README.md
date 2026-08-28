@@ -284,3 +284,7 @@ agama-demo/
     ├── agama-demo.qcow2            demo disk image (created on first run)
     └── cache/                      extracted installer kernel/initrd, per ISO
 ```
+
+## License
+
+GPL-3.0-only. See [LICENSE](LICENSE).

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
 """Interactive menu for driving a running Agama live installer over its HTTP
 API, one atomic action at a time. Also offers a scripted end-to-end flow
 (Storage -> "Run full scripted install") that loads a predefined profile,

@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-only
 # Serves ./profiles over plain HTTP so a booting VM can fetch one via
 # inst.auto=http://<host>:<port>/<profile>.jsonnet on the kernel command line.
 #

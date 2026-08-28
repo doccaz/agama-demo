@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-only
 # One-command Agama demo: starts swtpm, serves the profile files, extracts
 # the installer kernel/initrd from the SLES ISO, and boots QEMU with
 # inst.auto= pointing at the chosen profile -- fully unattended, no manual
