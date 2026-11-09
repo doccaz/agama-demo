@@ -280,6 +280,15 @@ straight out of `agama-server/src/*/web.rs` on the `SLE-16` branch.
   `ProgressChanged` events on `/ws`; this renders it as a single updating
   progress bar per D-Bus service instead of the raw event dump — verified
   live during an actual `atm-slim` package installation.
+- **Notify on phase change / question / issue** — Agama has no outbound
+  notifications or webhooks, only the `/ws` push stream, so this is a
+  client-side watcher: it raises a desktop notification (`notify-send`), a
+  terminal bell line, and optionally POSTs to a webhook (plain-text body
+  plus a `Title` header, which ntfy accepts as-is) on phase changes,
+  new questions and config issues. It only works while it is running, and
+  reconnects on its own when the VM or Agama restarts. Run it without the
+  menu with
+  `./agama-console.py <ip> --notify [--notify-url https://ntfy.sh/mytopic]`.
 - **Re-authenticate**.
 - **Raw API call** — any GET/POST/PUT/PATCH/DELETE against any endpoint,
   for whatever isn't wired into a dedicated action.

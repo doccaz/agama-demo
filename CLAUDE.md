@@ -90,13 +90,25 @@ Categories (each a submenu in `CATEGORIES` near the bottom of the script):
   `/mnt` on its own shortly after `Finish` — even with no probe call and no explicit reboot — so
   chroot'd actions have a narrow window right after install completes.
 
-Four top-level extras, listed after the categories in the same main-menu loop (log download is
+Five top-level extras, listed after the categories in the same main-menu loop (log download is
 inside **Manager** above, not one of these): a live event stream over the `/ws` websocket, raw
 (needs `pip install websockets`, or `zypper install python313-websockets`; degrades to a clear
 error if missing); a **filtered package-install progress view** — `GET manager/installer` has no
 per-package field, only `ProgressChanged` events on `/ws` do (`"Installing curl"`, step N/max, one
 event per D-Bus service path) — rendered as a single updating progress bar instead of the raw
-dump, verified live mid-install; **re-authenticate**; and a raw GET/POST/PUT/PATCH/DELETE call for
+dump, verified live mid-install; a **notifier** (`action_notify`, also `./agama-console.py <ip>
+--notify [--notify-url URL]` with no menu) — Agama has no outbound notifications/webhooks, only the
+`/ws` push stream to connected clients, so this is a client-side watcher: it turns
+`InstallationPhaseChanged`, `QuestionsChanged` (no payload, so it `GET`s `questions` and dedupes by
+id) and `IssuesChanged` (deduped per path) into `notify-send` + a terminal bell line + an optional
+webhook POST (plain-text body, `Title` header — ntfy-compatible); `ProgressChanged` is
+deliberately ignored. It re-authenticates and reconnects forever, since the web-server restart
+(new token key) and VM reboots drop the websocket, and runs the handler via `asyncio.to_thread`
+because blocking HTTP/`notify-send` calls in the event loop made `websockets` miss keepalive
+pings and drop the stream. Verified live: phase Config/Install/Finish and two real issues
+(unreachable storage device, "Product must be registered" when software wasn't probed) reached a
+webhook sink; the question path was only tested with synthetic events, never a real LUKS
+question; **re-authenticate**; and a raw GET/POST/PUT/PATCH/DELETE call for
 anything not covered by a dedicated action.
 
 Reboot-to-verify was confirmed end-to-end: `POST manager/finish "reboot"` cleanly reboots out of

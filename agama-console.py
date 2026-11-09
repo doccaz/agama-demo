@@ -47,11 +47,14 @@ your Agama version, fall back to the raw API call action to explore it live.
 
 Usage:
     ./agama-console.py <installer-ip> [--password DemoSecurity2026!]
+    ./agama-console.py <installer-ip> --notify [--notify-url https://ntfy.sh/mytopic]
 """
 import argparse
 import json
 import shlex
+import shutil
 import ssl
+import subprocess
 import sys
 import time
 
@@ -62,6 +65,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 try:
     import websockets
+    from websockets.exceptions import WebSocketException
     HAVE_WEBSOCKETS = True
 except ImportError:
     HAVE_WEBSOCKETS = False
@@ -1273,6 +1277,124 @@ def watch_package_progress(client):
         error(f"Websocket error: {exc}")
 
 
+# --- Notifications (websocket) ------------------------------------------
+# Agama has no outbound notifications of its own (no webhooks/email): the only
+# push channel is the /ws event stream, delivered to connected clients. This is
+# a client-side watcher over that stream that turns a few events into desktop
+# notifications (notify-send), a terminal bell+line, and optionally a webhook
+# POST (plain-text body + Title header, which ntfy accepts as-is). It only
+# works while it is running. Events used (agama-lib/src/http/event.rs):
+#   InstallationPhaseChanged {phase}   QuestionsChanged (no payload -> we GET
+#   /api/questions)   IssuesChanged {path, issues}
+# ProgressChanged is deliberately left out -- far too noisy to notify on.
+# It re-authenticates and reconnects forever: the web server restarts (new
+# token signing key) on the main-source override and the VM reboots on
+# manager/finish, and both drop the websocket.
+
+def _issue_text(issue):
+    if isinstance(issue, dict):
+        return issue.get("description") or json.dumps(issue)
+    return str(issue)
+
+
+def _send_notification(title, message, webhook=None):
+    print(f"\a{BOLD}{YELLOW}[notify] {title}: {message}{ENDC}", flush=True)
+    if shutil.which("notify-send"):
+        try:
+            subprocess.run(["notify-send", "-a", "Agama", title, message], timeout=5, check=False)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    if webhook:
+        try:
+            requests.post(webhook, data=message.encode(), headers={"Title": title}, timeout=10)
+        except requests.RequestException as exc:
+            warn(f"Webhook POST failed: {exc}")
+
+
+def _notify_on_event(event, client, state, send):
+    """Pure-ish event handler (state = dict of dedupe memory, send = callable)
+    so it can be exercised without a websocket."""
+    etype = event.get("type")
+    if etype == "InstallationPhaseChanged":
+        raw = event.get("phase")
+        phase = PHASES.get(raw, raw)
+        if state.get("phase") != phase:
+            state["phase"] = phase
+            if phase == "Finish":
+                send("Agama: install finished", "The installation reached the Finish phase.")
+            else:
+                send(f"Agama: phase {phase}", f"Installer moved to the {phase} phase.")
+    elif etype == "QuestionsChanged":
+        ok, questions = client.get("questions", show=False)
+        seen = state.setdefault("questions", set())
+        for q in (questions or []) if ok else []:
+            g = q.get("generic", {})
+            qid = g.get("id")
+            if qid in seen:
+                continue
+            seen.add(qid)
+            send("Agama is asking a question", f"{g.get('text', '?')} (id={qid}, options={g.get('options')})")
+    elif etype == "IssuesChanged":
+        issues = event.get("issues") or []
+        key = (event.get("path"), tuple(_issue_text(i) for i in issues))
+        issues_seen = state.setdefault("issues", {})
+        if issues_seen.get(event.get("path")) == key:
+            return
+        issues_seen[event.get("path")] = key
+        if issues:
+            send("Agama: configuration issue", "; ".join(key[1]) + f" ({event.get('path')})")
+
+
+async def _notify_loop(client, webhook):
+    import asyncio
+    state = {}
+    send = lambda title, msg: _send_notification(title, msg, webhook)  # noqa: E731
+    ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+    while True:
+        try:
+            if not client.authenticate():
+                raise ConnectionError("authentication failed")
+            ok, status = client.get("manager/installer", show=False)
+            if ok and status:
+                state["phase"] = PHASES.get(status.get("phase"), status.get("phase"))
+                log(f"Current phase: {state['phase']}")
+            await asyncio.to_thread(_notify_on_event, {"type": "QuestionsChanged"}, client, state, send)
+            uri = f"wss://{client.ip}/api/ws"
+            headers = {"Authorization": f"Bearer {client.token}"}
+            log(f"Watching {uri} for phase/question/issue events (Ctrl-C to stop)...")
+            async with websockets.connect(uri, ssl=ssl_ctx, additional_headers=headers) as ws:
+                async for raw in ws:
+                    try:
+                        event = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    # blocking HTTP/notify-send must stay off the event loop, or the
+                    # websocket keepalive pings time out and the stream drops
+                    await asyncio.to_thread(_notify_on_event, event, client, state, send)
+        except (OSError, ConnectionError, requests.RequestException, WebSocketException) as exc:
+            warn(f"Lost the Agama event stream ({exc.__class__.__name__}); retrying in 5s...")
+        await asyncio.sleep(5)
+
+
+def watch_notify(client, webhook=None):
+    if not HAVE_WEBSOCKETS:
+        error("The 'websockets' package isn't installed -- run: pip install websockets")
+        return
+    import asyncio
+    try:
+        asyncio.run(_notify_loop(client, webhook))
+    except KeyboardInterrupt:
+        print()
+        log("Stopped notifying.")
+
+
+def action_notify(client):
+    webhook = input("Webhook URL to also POST to (blank = desktop/terminal only): ").strip() or None
+    watch_notify(client, webhook)
+
+
 # --- Raw API call ------------------------------------------------------
 
 def raw_call(client):
@@ -1343,15 +1465,24 @@ def main():
     parser = argparse.ArgumentParser(description="Interactive menu for the Agama HTTP API.")
     parser.add_argument("ip", help="IP address of the machine running the Agama live installer")
     parser.add_argument("--password", default=DEFAULT_PASSWORD, help="root/auth password (default: %(default)s)")
+    parser.add_argument("--notify", action="store_true",
+                        help="skip the menu and just watch for phase/question/issue events, "
+                             "notifying via notify-send/terminal (reconnects forever)")
+    parser.add_argument("--notify-url", metavar="URL",
+                        help="with --notify, also POST each notification to this webhook (e.g. an ntfy topic)")
     args = parser.parse_args()
 
     client = AgamaClient(args.ip, args.password)
+    if args.notify:
+        watch_notify(client, args.notify_url)
+        return
     if not client.authenticate():
         sys.exit(1)
 
     top_level_extra = [
         ("Watch live event stream (websocket, raw)", watch_events),
         ("Watch package install progress (filtered)", watch_package_progress),
+        ("Notify on phase change / question / issue (desktop + optional webhook)", action_notify),
         ("Re-authenticate", action_reauth),
         ("Raw API call (any endpoint)", raw_call),
     ]
