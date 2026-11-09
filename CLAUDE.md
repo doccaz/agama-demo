@@ -199,6 +199,22 @@ upstream agama's `doc/boot_arguments.md` instead documents `inst.config_url=URL`
 purpose. This script uses `inst.auto` (the officially documented one) — swap to `inst.config_url`
 in the `APPEND` line if a given build doesn't recognize it.
 
+### Main install source vs. extra repositories
+
+- **Main source** is chosen by the product definition (`products.d/sles_160.yaml` in the agama
+  repo): `installation_repositories: []` is empty, so the source is located on the install media
+  by **label** — `installation_labels` maps arch to media label (`SLES160-x86_64`,
+  `SLES160-arch64`, `SLES160-s390x`, `SLES160-ppc64`). That's why the full ISO installs without any
+  URL configured.
+- **Override it** with the `inst.install_url=<url>[,<url2>]` kernel arg (documented in agama's
+  `doc/boot_arguments.md`, `SLE-16` branch). It replaces the product's default `installation_url`
+  and, per those docs, affects all products. It's boot-time only — there's no API endpoint for it.
+  `launch-demo.sh` appends it when `INSTALL_URL` is set (e.g.
+  `INSTALL_URL=http://192.168.110.1:8080/repo ./launch-demo.sh`). Not yet tested live against a
+  16.0 GM build.
+- **Extra repos** (`extraRepositories` via `PUT software/config`, `sw_add_repository` in
+  `agama-console.py`, or a profile) are *additional* to the main source, never a replacement.
+
 ### Access points once the VM is up
 
 VNC `localhost:5901` (`:1`); guest IP via

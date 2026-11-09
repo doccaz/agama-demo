@@ -43,6 +43,10 @@ HTTP_PORT="${HTTP_PORT:-8000}"
 BRIDGE="${BRIDGE:-virbr-suse}"
 BRIDGE_HOST_IP="${BRIDGE_HOST_IP:-192.168.110.1}"
 LIVE_PASSWORD="${LIVE_PASSWORD:-DemoSecurity2026!}"
+# Optional: override the product's main install source (comma-separated URLs).
+# Passed as `inst.install_url=` on the kernel cmdline; unset = default
+# (repo found on the install media via the product's installation_labels).
+INSTALL_URL="${INSTALL_URL:-}"
 TPM_DIR="${TPM_DIR:-/tmp/mytpm}"
 TPM_SOCK="$TPM_DIR/swtpm-sock"
 OVMF="${OVMF:-/usr/share/qemu/ovmf-x86_64-4m.bin}"
@@ -128,6 +132,9 @@ fi
 APPEND="inst.auto=http://$BRIDGE_HOST_IP:$HTTP_PORT/$PROFILE_FILE console=ttyS0 live.password=$LIVE_PASSWORD"
 if [ "$MANUAL" -eq 1 ]; then
     APPEND="$APPEND inst.install=0"
+fi
+if [ -n "$INSTALL_URL" ]; then
+    APPEND="$APPEND inst.install_url=$INSTALL_URL"
 fi
 
 echo "[*] Booting profile '$PROFILE' against $ISO_TAG"

@@ -64,6 +64,12 @@ There are two, independent root passwords in play, easy to conflate:
   the live installer generates a random password shown only on the local
   console/VNC, which you'd have to read off the screen for remote access.
 
+Optional: set `INSTALL_URL` (comma-separated) to override the main install
+source via the `inst.install_url=` kernel arg, e.g.
+`INSTALL_URL=http://192.168.110.1:8080/repo ./launch-demo.sh`. By default the
+source is found on the install media by label (`SLES160-x86_64`, ...). Extra
+repos added via the API/profile are additive, not a replacement.
+
 Other access points while the VM is running:
 - VNC: `localhost:5901` (display `:1`) — graphical console
 - The guest is bridged onto the libvirt `SUSE` network (`virbr-suse`,
