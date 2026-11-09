@@ -67,7 +67,7 @@ There are two, independent root passwords in play, easy to conflate:
 Optional: set `INSTALL_URL` (comma-separated) to pass `inst.install_url=` on
 the kernel cmdline, e.g. `INSTALL_URL=http://192.168.110.1:8080/repo
 ./launch-demo.sh`. Per the SLE-16 source this is only used when no local
-install media is found, so with the Full ISO it is likely ignored (untested).
+install media is found, so with the Full ISO it is ignored (verified live on 16.0 GM).
 Extra repos added via the API/profile are additive, not a replacement.
 
 Other access points while the VM is running:

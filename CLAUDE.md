@@ -208,12 +208,20 @@ in the `APPEND` line if a given build doesn't recognize it.
   URL configured.
 - **Override it** with the `inst.install_url=<url>[,<url2>]` kernel arg (documented in agama's
   `doc/boot_arguments.md`). It replaces the product's `repositories` list (`product_builder.rb`
-  `set_repositories`). **Caveat, read from the `SLE-16` source, not tested live:** `add_base_repos`
+  `set_repositories`). **Caveat, from the `SLE-16` source and verified live on 16.0 GM:** `add_base_repos`
   in `software/manager.rb` tries, in order, DUD repo → media by label → `/run/initramfs/live/install`
   (Full ISO) → only then `product.repositories`. So on a Full ISO the local media wins and
-  `inst.install_url` is most likely **ignored**; it only matters when no local media is found
+  `inst.install_url` is **ignored**; it only matters when no local media is found
   (e.g. the online/minimal ISO). `launch-demo.sh` appends it when `INSTALL_URL` is set.
   Boot-time only — no API endpoint.
+  **Workaround, verified live on 16.0 GM** (in the guest, `--manual` Config phase, before install):
+  `mount --bind <empty-dir> /run/initramfs/live` (hides `/install` on the live medium — bind-mounting
+  over `/run/initramfs/live/install` alone does NOT work, Agama still picks `hd:/install?device=tmpfs[/empty]`
+  and wedges), append ` inst.install_url=<url>` to `/run/agama/cmdline.d/agama.conf`,
+  `systemctl restart agama.service`, then re-select the product (`PUT software/config {"product":"SLES"}`)
+  and `POST software/probe`. The base repo then becomes the install_url (tested with an unreachable
+  dummy URL: it showed as the only repo, `enabled:false, loaded:false`, proposal failed — not yet
+  tested with a reachable repo). The restart also drops the loaded profile/product state.
 - **Extra repos** (`extraRepositories` via `PUT software/config`, `sw_add_repository` in
   `agama-console.py`, or a profile) are *additional* to the main source, never a replacement. Order doesn't matter either: the base repo is the one added first at probe
   (lowest libzypp source id, `base_repositories`), and user repos are added after it.
