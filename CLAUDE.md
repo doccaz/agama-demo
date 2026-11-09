@@ -219,9 +219,15 @@ in the `APPEND` line if a given build doesn't recognize it.
   over `/run/initramfs/live/install` alone does NOT work, Agama still picks `hd:/install?device=tmpfs[/empty]`
   and wedges), append ` inst.install_url=<url>` to `/run/agama/cmdline.d/agama.conf`,
   `systemctl restart agama.service`, then re-select the product (`PUT software/config {"product":"SLES"}`)
-  and `POST software/probe`. The base repo then becomes the install_url (tested with an unreachable
-  dummy URL: it showed as the only repo, `enabled:false, loaded:false`, proposal failed — not yet
-  tested with a reachable repo). The restart also drops the loaded profile/product state.
+  and `POST software/probe` (or `systemctl restart agama-autoinstall.service` to re-apply the profile).
+  The base repo then becomes the install_url. Verified end-to-end with a reachable HTTP repo
+  (the ISO's `/install` tree served from the host on the already-firewalled port 8000): repo
+  `enabled:true, loaded:true`, proposal OK, install ran to `Finish`, and the host log showed
+  exactly 742 RPM GETs for the 742 packages installed. With an unreachable URL the repo shows
+  `enabled:false, loaded:false` and the proposal fails. The restart drops the loaded profile/product
+  state. Gotcha: `atm-slim` doesn't wipe, so on a disk with a previous install storage reports
+  "Cannot calculate a valid storage setup" and `POST manager/install` 400s with "Installation
+  settings are invalid" — use a fresh disk (`DISK=...`). The installed target's repo config wasn't checked.
 - **Extra repos** (`extraRepositories` via `PUT software/config`, `sw_add_repository` in
   `agama-console.py`, or a profile) are *additional* to the main source, never a replacement. Order doesn't matter either: the base repo is the one added first at probe
   (lowest libzypp source id, `base_repositories`), and user repos are added after it.
