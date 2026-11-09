@@ -50,6 +50,7 @@ Usage:
 """
 import argparse
 import json
+import shlex
 import ssl
 import sys
 import time
@@ -436,6 +437,121 @@ def sw_remove_repositories(client):
         success("Custom repositories cleared.")
 
 
+def _wait_api(client, timeout=180):
+    """Poll manager/installer quietly until the API answers again. A 401 counts:
+    the web server regenerates its token signing key on restart, so the old
+    cookie is rejected until the caller re-authenticates."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            r = client.session.get(f"{client.api_root}/manager/installer", timeout=10)
+            if r.status_code in (200, 401):
+                return True
+        except requests.RequestException:
+            pass
+        time.sleep(3)
+    return False
+
+
+def sw_override_main_source(client):
+    """Make Agama's *main* install source a custom URL even on the Full ISO.
+
+    Agama (SLE-16 software/manager.rb add_base_repos) only falls back to
+    product.repositories -- which is what inst.install_url overrides -- when no
+    local media is found, so on the Full ISO the kernel arg alone is ignored.
+    Workaround, verified live on 16.0 GM, run in the live env via a `pre`
+    script: bind-mount an empty dir over /run/initramfs/live (hides /install;
+    hiding only /run/initramfs/live/install does NOT work and wedges Agama),
+    append inst.install_url=<url> to /run/agama/cmdline.d/agama.conf and
+    restart agama.service. The restart drops loaded config, so the software,
+    storage and hostname configs are snapshotted first and replayed after.
+    If the installer was booted with inst.auto, the restart cascades
+    (agama-autoinstall BindsTo agama-web-server BindsTo agama.service) and
+    re-applies that profile by itself, root password included. Otherwise root
+    password / other users are not restored -- re-set them via Users.
+    Do this in the Config phase, before triggering the install."""
+    url = input("Main install source URL(s), comma-separated (e.g. http://host/repo): ").strip()
+    if not url or any(c.isspace() or c in "'\"" for c in url):
+        error("A URL without spaces or quotes is required.")
+        return
+    warn("This runs a 'pre' script in the live installer env, restarts agama.service and "
+         "REMOVES ALL defined scripts (otherwise the script would re-run on the next profile "
+         "load). Root password/users are only restored if the installer was booted with inst.auto.")
+    if input(f"{YELLOW}Override the main install source with {url}? [y/N]{ENDC} ").strip().lower() != "y":
+        log("Cancelled.")
+        return
+
+    snapshot = {}
+    for key, endpoint in (("software", "software/config"), ("storage", "storage/config"),
+                          ("hostname", "hostname/config")):
+        ok, body = client.get(endpoint, show=False)
+        if ok and body:
+            snapshot[key] = body
+
+    quoted = shlex.quote(f" inst.install_url={url}")
+    script = (
+        "#!/bin/bash\nset -e\n"
+        "mkdir -p /run/agama-empty\n"
+        "if [ -e /run/initramfs/live/install ]; then mount --bind /run/agama-empty /run/initramfs/live; fi\n"
+        "sed -i 's# *inst\\.install_url=[^ ]*##' /run/agama/cmdline.d/agama.conf\n"
+        f"echo {quoted} >> /run/agama/cmdline.d/agama.conf\n"
+        "systemctl --no-block restart agama.service\n"
+    )
+    name = f"override-main-source-{int(time.time())}"
+    ok, _, _ = client.call("POST", "scripts", {"type": "pre", "name": name, "content": script})
+    if not ok:
+        return
+    # agama-web-server BindsTo= agama.service, so the restart at the end of the
+    # script takes the API itself down: a dropped connection here is expected.
+    try:
+        r = client.session.post(f"{client.api_root}/scripts/run", json="pre", timeout=120)
+        if r.status_code not in (200, 201, 204):
+            error(f"POST scripts/run -> {r.status_code}: {r.text}")
+            return
+    except requests.ConnectionError:
+        log("API connection dropped, as expected (the web server restarts with agama.service).")
+    except requests.RequestException as exc:
+        error(f"POST scripts/run: {exc}")
+        return
+
+    log("Waiting for the Agama API to come back after the service restart...")
+    time.sleep(5)
+    if not _wait_api(client) or not client.authenticate():
+        error("API did not come back; check the installer.")
+        return
+    # remove the script now: a leftover 'pre' script would re-run (and restart
+    # agama.service again) on the next profile load
+    client.call("DELETE", "scripts")
+
+    sw = snapshot.get("software")
+    if sw:
+        # patterns/packages only resolve once the product is selected and the
+        # new source probed, so restore in two steps
+        ok, current = client.get("software/config", show=False)
+        if sw.get("product") and not (ok and current and current.get("product") == sw["product"]):
+            log("Restoring product selection...")
+            client.call("PUT", "software/config", {"product": sw["product"]})
+            client.call("POST", "software/probe", timeout=300)
+        rest = {k: v for k, v in sw.items() if k != "product" and v not in (None, {}, [])}
+        if rest:
+            log("Restoring patterns/packages/extra repositories...")
+            client.call("PUT", "software/config", rest)
+    if "storage" in snapshot:
+        log("Restoring storage config...")
+        client.call("PUT", "storage/config", snapshot["storage"])
+    if "hostname" in snapshot:
+        log("Restoring hostname config...")
+        client.call("PUT", "hostname/config", snapshot["hostname"])
+
+    log("Probing everything against the new source (moves the installer back to Config)...")
+    client.call("POST", "manager/probe_sync", timeout=300)
+    ok, repos = client.get("software/repositories")
+    if ok and isinstance(repos, list) and repos and repos[0].get("loaded"):
+        success("Main source overridden. Check Users -> root: it is only re-applied for inst.auto boots.")
+    else:
+        warn("The first repository is not loaded -- check the URL is reachable from the guest.")
+
+
 SOFTWARE_MENU = [
     ("List products", sw_list_products),
     ("Select product", sw_select_product),
@@ -444,6 +560,7 @@ SOFTWARE_MENU = [
     ("Show all active repositories", sw_repositories),
     ("Add a custom repository", sw_add_repository),
     ("Clear custom repositories", sw_remove_repositories),
+    ("Override MAIN install source (hide local media + inst.install_url)", sw_override_main_source),
     ("Show licenses", sw_licenses),
     ("Show proposal", sw_proposal),
     ("Probe software", sw_probe),

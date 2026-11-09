@@ -213,7 +213,8 @@ straight out of `agama-server/src/*/web.rs` on the `SLE-16` branch.
   watch progress, finish install (reboot/halt/stop/poweroff the target),
   list/download logs.
 - **Software** — products, config, patterns, licenses, proposal, probe,
-  registration status.
+  registration status, and an action to override the *main* install source
+  (see "Main install source vs. extra repositories" above).
   - *Repositories*: list/add/clear custom repos
     (`PUT software/config extraRepositories`). Adding a repo whose metadata
     Agama can actually reach makes it synchronously try to refresh it, which

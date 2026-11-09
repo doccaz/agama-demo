@@ -46,6 +46,14 @@ Categories (each a submenu in `CATEGORIES` near the bottom of the script):
     back the `enabled` you requested, but `GET software/repositories` reflects the real zypper
     state and flips to `enabled:false, loaded:false` if the repo failed to load — verified live
     both ways.
+  - *Override MAIN install source*: hides the local media, sets `inst.install_url` and restarts
+    Agama via a `pre` script (see "Main install source vs. extra repositories" below). The
+    restart takes the API itself down (`agama-web-server` BindsTo `agama.service`) and invalidates
+    the old token (401 `InvalidSignature`), so the action expects the dropped connection, waits for
+    the API, re-authenticates, deletes the script and replays the software/storage/hostname
+    config it snapshotted first; for `inst.auto` boots the restart also cascades to
+    `agama-autoinstall` (BindsTo the web server), which re-applies the profile by itself, root
+    password included. Verified live: install from the HTTP repo ran to `Finish`.
 - **Storage** — list disks, show config, load a storage-layout preset on-the-fly, load a bundled
   full profile (hostname+root+product+storage), run the full scripted install, probe/reprobe/
   reactivate, raw system-device listing, proposed storage actions, candidate drives.
@@ -214,7 +222,8 @@ in the `APPEND` line if a given build doesn't recognize it.
   `inst.install_url` is **ignored**; it only matters when no local media is found
   (e.g. the online/minimal ISO). `launch-demo.sh` appends it when `INSTALL_URL` is set.
   Boot-time only — no API endpoint.
-  **Workaround, verified live on 16.0 GM** (in the guest, `--manual` Config phase, before install):
+  **Workaround, verified live on 16.0 GM** (in the guest, `--manual` Config phase, before install;
+  `agama-console.py` automates it: Software → "Override MAIN install source"):
   `mount --bind <empty-dir> /run/initramfs/live` (hides `/install` on the live medium — bind-mounting
   over `/run/initramfs/live/install` alone does NOT work, Agama still picks `hd:/install?device=tmpfs[/empty]`
   and wedges), append ` inst.install_url=<url>` to `/run/agama/cmdline.d/agama.conf`,
@@ -227,10 +236,25 @@ in the `APPEND` line if a given build doesn't recognize it.
   `enabled:false, loaded:false` and the proposal fails. The restart drops the loaded profile/product
   state. Gotcha: `atm-slim` doesn't wipe, so on a disk with a previous install storage reports
   "Cannot calculate a valid storage setup" and `POST manager/install` 400s with "Installation
-  settings are invalid" — use a fresh disk (`DISK=...`). The installed target's repo config wasn't checked.
+  settings are invalid" — use a fresh disk (`DISK=...`). In the installed target the only repo left in
+  `/etc/zypp/repos.d` is the override URL itself (`baseurl=http://<host>/repo`, enabled,
+  autorefresh) — a host-local URL baked into the installed system, so point it at something the
+  installed system can reach, or change it after install. Checked by reading the disk offline
+  (`qemu-nbd -r` + read-only mount), see the reboot note below.
 - **Extra repos** (`extraRepositories` via `PUT software/config`, `sw_add_repository` in
   `agama-console.py`, or a profile) are *additional* to the main source, never a replacement. Order doesn't matter either: the base repo is the one added first at probe
   (lowest libzypp source id, `base_repositories`), and user repos are added after it.
+
+### Booting the installed target
+
+`manager/finish "reboot"` under `launch-demo.sh` goes back into the live installer, not the
+installed system: QEMU direct-boots the ISO's kernel (`-kernel/-initrd/-append`), so a guest reboot
+reloads that. To boot the installed disk, run QEMU again *without* `-cdrom/-kernel/-initrd/-append`
+and with a persistent OVMF vars file (`-drive if=pflash,...code.bin` readonly + a writable copy of
+`ovmf-x86_64-4m-vars.bin`) — plain `-bios` loops forever in shim's "Boot Option Restoration"
+because nothing keeps the restored boot entry. `swtpm` exits when its QEMU client disconnects, so
+restart it (in the background) first. A fresh SLES 16 target from `atm-slim` had no sshd listening
+(connection refused on :22), so use the serial console, or inspect the disk offline.
 
 ### Access points once the VM is up
 
