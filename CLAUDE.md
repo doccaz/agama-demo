@@ -207,13 +207,16 @@ in the `APPEND` line if a given build doesn't recognize it.
   `SLES160-arch64`, `SLES160-s390x`, `SLES160-ppc64`). That's why the full ISO installs without any
   URL configured.
 - **Override it** with the `inst.install_url=<url>[,<url2>]` kernel arg (documented in agama's
-  `doc/boot_arguments.md`, `SLE-16` branch). It replaces the product's default `installation_url`
-  and, per those docs, affects all products. It's boot-time only — there's no API endpoint for it.
-  `launch-demo.sh` appends it when `INSTALL_URL` is set (e.g.
-  `INSTALL_URL=http://192.168.110.1:8080/repo ./launch-demo.sh`). Not yet tested live against a
-  16.0 GM build.
+  `doc/boot_arguments.md`). It replaces the product's `repositories` list (`product_builder.rb`
+  `set_repositories`). **Caveat, read from the `SLE-16` source, not tested live:** `add_base_repos`
+  in `software/manager.rb` tries, in order, DUD repo → media by label → `/run/initramfs/live/install`
+  (Full ISO) → only then `product.repositories`. So on a Full ISO the local media wins and
+  `inst.install_url` is most likely **ignored**; it only matters when no local media is found
+  (e.g. the online/minimal ISO). `launch-demo.sh` appends it when `INSTALL_URL` is set.
+  Boot-time only — no API endpoint.
 - **Extra repos** (`extraRepositories` via `PUT software/config`, `sw_add_repository` in
-  `agama-console.py`, or a profile) are *additional* to the main source, never a replacement.
+  `agama-console.py`, or a profile) are *additional* to the main source, never a replacement. Order doesn't matter either: the base repo is the one added first at probe
+  (lowest libzypp source id, `base_repositories`), and user repos are added after it.
 
 ### Access points once the VM is up
 

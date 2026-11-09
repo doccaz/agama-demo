@@ -46,6 +46,8 @@ LIVE_PASSWORD="${LIVE_PASSWORD:-DemoSecurity2026!}"
 # Optional: override the product's main install source (comma-separated URLs).
 # Passed as `inst.install_url=` on the kernel cmdline; unset = default
 # (repo found on the install media via the product's installation_labels).
+# NOTE: Agama only falls back to this when no local media is found, so with
+# the Full ISO it is likely ignored (per SLE-16 software/manager.rb; untested).
 INSTALL_URL="${INSTALL_URL:-}"
 TPM_DIR="${TPM_DIR:-/tmp/mytpm}"
 TPM_SOCK="$TPM_DIR/swtpm-sock"

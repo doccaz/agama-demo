@@ -64,11 +64,11 @@ There are two, independent root passwords in play, easy to conflate:
   the live installer generates a random password shown only on the local
   console/VNC, which you'd have to read off the screen for remote access.
 
-Optional: set `INSTALL_URL` (comma-separated) to override the main install
-source via the `inst.install_url=` kernel arg, e.g.
-`INSTALL_URL=http://192.168.110.1:8080/repo ./launch-demo.sh`. By default the
-source is found on the install media by label (`SLES160-x86_64`, ...). Extra
-repos added via the API/profile are additive, not a replacement.
+Optional: set `INSTALL_URL` (comma-separated) to pass `inst.install_url=` on
+the kernel cmdline, e.g. `INSTALL_URL=http://192.168.110.1:8080/repo
+./launch-demo.sh`. Per the SLE-16 source this is only used when no local
+install media is found, so with the Full ISO it is likely ignored (untested).
+Extra repos added via the API/profile are additive, not a replacement.
 
 Other access points while the VM is running:
 - VNC: `localhost:5901` (display `:1`) — graphical console
@@ -83,6 +83,13 @@ Other access points while the VM is running:
 Because the guest has a real routable IP on that network (rather than being
 NAT'd behind QEMU usermode networking), anyone else who can reach
 `192.168.110.0/24` can also hit it directly, firewall permitting.
+
+## Main install source vs. extra repositories
+
+![How Agama picks the main install source](docs/repo-source-flow.svg)
+
+Editable source: [`docs/repo-source-flow.drawio`](docs/repo-source-flow.drawio) (keep the SVG in
+sync if you change it).
 
 ## Live API demo
 
